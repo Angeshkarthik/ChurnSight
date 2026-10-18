@@ -3,7 +3,8 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/Dataset%20License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Code Style: Clean Architecture](https://img.shields.io/badge/architecture-modular-brightgreen.svg)](#planned-architecture)
-[![Test Suite: Pytest](https://img.shields.io/badge/tests-29%20passed-brightgreen.svg)](#running-automated-tests)
+[![Test Suite: Pytest](https://img.shields.io/badge/tests-36%20passed-brightgreen.svg)](#running-automated-tests)
+[![Champion Model: Random Forest](https://img.shields.io/badge/champion-Random%20Forest%20(ROC--AUC%200.844)-blueviolet.svg)](#model-benchmarking--evaluation-phase-4)
 
 An end-to-end Machine Learning and Full-Stack software engineering application designed to predict customer churn, explain individual risk drivers using Explainable AI (SHAP), and empower customer success teams with proactive retention intelligence.
 
@@ -43,44 +44,55 @@ To maintain complete reproducibility and data governance, we use the industry-st
 
 ---
 
-## 🔍 3. Exploratory Data Analysis & Empirical Findings (Phase 3)
+## 🏆 3. Model Benchmarking & Evaluation (Phase 4)
 
-The complete interactive analysis is documented in [`notebooks/01_exploratory_data_analysis.ipynb`](file:///d:/@PROJECTS/ML/customer_churn_intelligence/notebooks/01_exploratory_data_analysis.ipynb).
+We implemented an evaluation harness using **5-Fold Stratified Cross-Validation on `X_train`** (5,634 samples) and evaluated candidate models on a strictly held-out **Test Set** (1,409 samples). Preprocessing was encapsulated inside Scikit-learn `Pipeline` objects to guarantee zero test leakage.
 
-### Key Empirical Findings:
+### 5-Fold Stratified Cross-Validation Results (Training Set Only)
 
-| Driver | Group / Value | Churn Rate | Business & Behavioral Insight |
-|---|---|---|---|
-| **Contract Type** | Month-to-month | **42.71%** | Highest churn risk. Lack of commitment allows customers to leave at any time. |
-| | One year | **11.27%** | Annual commitment cuts churn by ~74%. |
-| | Two year | **2.83%** | Over 97% retained. Long-term contracts virtually eliminate churn. |
-| **Tenure** | 0–12 Months | **47.44%** | Nearly half of all churn happens in year 1. Critical onboarding window. |
-| | 49–72 Months | **9.51%** | Long-tenure customers demonstrate strong brand loyalty. |
-| **Internet Service** | Fiber optic | **41.89%** | Premium speed but high price point ($70–$118/mo) drives price sensitivity. |
-| | DSL | **18.96%** | Lower monthly cost, moderate churn. |
-| | No Internet | **7.41%** | Landline-only customers are overwhelmingly retained. |
-| **Payment Method** | Electronic check | **45.29%** | Manual monthly billing forces conscious reassessment of bills. |
-| | Credit Card (auto) | **15.24%** | Automatic billing creates retention inertia. |
-| | Bank Transfer (auto)| **16.71%** | Automated payment reduces friction. |
-| **Support Services**| No TechSupport | **41.64%** | Unresolved technical issues strongly correlate with cancellation. |
-| | With TechSupport | **15.17%** | Bundled tech support cuts churn by more than half. |
+| Model Architecture | CV ROC-AUC | CV PR-AUC | CV Recall | CV Precision | CV F1 | CV Accuracy |
+|---|---|---|---|---|---|---|
+| **Gradient Boosting** | **0.8482 ± 0.0126** | **0.6676 ± 0.0222** | 0.5291 ± 0.0305 | 0.6622 | 0.5880 | 80.33% |
+| **Random Forest** | 0.8471 ± 0.0084 | 0.6630 ± 0.0168 | 0.5070 ± 0.0198 | **0.6730** | 0.5781 | **80.35%** |
+| **Logistic Regression** | 0.8461 ± 0.0126 | 0.6615 ± 0.0194 | 0.5438 ± 0.0409 | 0.6521 | 0.5924 | 80.19% |
+| **Hist Gradient Boosting** | 0.8451 ± 0.0103 | 0.6612 ± 0.0228 | 0.5258 ± 0.0250 | 0.6590 | 0.5846 | 80.17% |
+| **Logistic Regression (Balanced)** | 0.8460 ± 0.0124 | 0.6601 ± 0.0196 | **0.8013 ± 0.0379** | 0.5169 | **0.6283** | 74.85% |
+| **Dummy Baseline** | 0.5000 ± 0.0000 | 0.2654 ± 0.0001 | 0.0000 ± 0.0000 | 0.0000 | 0.0000 | 73.46% |
+
+### Held-Out Test Set Performance (N = 1,409)
+
+| Model | ROC-AUC | PR-AUC | Recall (Churn) | Precision (Churn) | F1-Score | Accuracy |
+|---|---|---|---|---|---|---|
+| **Random Forest (Champion)** | **0.8437** | **0.6601** | 0.5053 | 0.6608 | 0.5727 | 79.99% |
+| **Gradient Boosting** | 0.8433 | 0.6600 | 0.5160 | **0.6655** | 0.5813 | 80.27% |
+| **Logistic Regression** | 0.8420 | 0.6337 | 0.5588 | 0.6572 | 0.6040 | **80.55%** |
+| **Logistic Regression (Balanced)** | 0.8415 | 0.6325 | **0.7834** | 0.5043 | **0.6136** | 73.81% |
+| **Hist Gradient Boosting** | 0.8398 | 0.6512 | 0.5134 | 0.6508 | 0.5740 | 79.77% |
+| **Dummy Baseline** | 0.5000 | 0.2654 | 0.0000 | 0.0000 | 0.0000 | 73.46% |
+
+### Business Confusion Matrix & Threshold Trade-Off Analysis
+
+On the held-out test set at the default threshold $P \ge 0.50$, **Random Forest** produced:
+- **True Negatives (TN):** 938 correctly identified retained customers.
+- **False Positives (FP):** 97 loyal customers flagged as churn risks (wasted retention effort).
+- **False Negatives (FN):** 185 churners missed (lost customer revenue).
+- **True Positives (TP):** 189 churners caught and flagged for intervention.
+
+#### Threshold Tuning: The Business Decision
+Because acquiring a new customer is 5x–25x more expensive than retaining an existing one, missing a churner (FN) is far more damaging than reaching out to a satisfied customer (FP). 
+
+By lowering the decision threshold, customer success teams can tune the trade-off:
+
+| Threshold | Churners Caught (Recall) | Precision | F1-Score | Churners Missed (FN) | False Alarms (FP) | Strategic Context |
+|---|---|---|---|---|---|---|
+| **0.20** | **85.83%** (321 / 374) | 46.32% | 0.6017 | **53** | 372 | Aggressive early-warning: catches ~86% of all churn. |
+| **0.30** | **78.07%** (292 / 374) | **53.28%** | **0.6334** | **82** | 256 | **Recommended Sweet Spot:** Highest F1 score, catches ~78% of churn with >53% precision. |
+| **0.40** | 64.97% (243 / 374) | 58.27% | 0.6144 | 131 | 174 | Moderate retention intervention. |
+| **0.50 (Default)**| 50.53% (189 / 374) | 66.08% | 0.5727 | 185 | 97 | Conservative: high precision, but misses half of churners. |
 
 ---
 
-## ⚙️ 4. Feature Engineering & Leakage Prevention (Phase 3)
-
-Located in [`src/features/`](file:///d:/@PROJECTS/ML/customer_churn_intelligence/src/features/):
-
-1. **Identifier Exclusion:** `customerID` is stripped from predictor matrix $X$. An arbitrary alphanumeric string (`7590-VHVEG`) would otherwise lead to ID memorization and catastrophic overfitting.
-2. **Target Isolation:** `Churn` is mapped to binary integers (`Yes` $\to$ 1, `No` $\to$ 0) and isolated into $y$.
-3. **Data Leakage Elimination:**
-   - Transformers (`StandardScaler`, `OneHotEncoder`) are fit **strictly on `X_train`** inside a Scikit-learn `ColumnTransformer`.
-   - `X_test` is only transformed (`.transform()`, never `.fit()`), guaranteeing zero test-set distribution leakage.
-4. **Production Resiliency:** Categorical features use `OneHotEncoder(handle_unknown='ignore', sparse_output=False)` to prevent API crashes when novel values are encountered during live inference.
-
----
-
-## 🏗️ 5. Planned Architecture
+## 🏗️ 4. Planned Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -103,10 +115,10 @@ Located in [`src/features/`](file:///d:/@PROJECTS/ML/customer_churn_intelligence
 │                   Machine Learning Core (src/)              │
 │  ┌────────────────────┐  ┌──────────────────────────────┐   │
 │  │ Feature Pipeline   │  │ Serialized Model (.joblib)   │   │
-│  │ (OneHot/Scaling)   │  │ (Scikit-Learn / Ensemble)    │   │
+│  │ (OneHot/Scaling)   │  │ (Random Forest Champion)     │   │
 │  └────────────────────┘  └──────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │ SHAP Explainer (TreeExplainer / KernelExplainer)     │   │
+│  │ SHAP Explainer (TreeExplainer)                       │   │
 │  └──────────────────────────────────────────────────────┘   │
 └──────────────────────────────┬──────────────────────────────┘
                                │ Training & Artifact Generation
@@ -120,7 +132,7 @@ Located in [`src/features/`](file:///d:/@PROJECTS/ML/customer_churn_intelligence
 
 ---
 
-## 🗂️ 6. Project Directory Structure
+## 🗂️ 5. Project Directory Structure
 
 ```text
 customer_churn_intelligence/
@@ -150,19 +162,24 @@ customer_churn_intelligence/
 │   │   ├── config.py            # Column schema taxonomy and groupings
 │   │   └── pipeline.py          # ColumnTransformer, leak-free preprocessing
 │   ├── models/                  # Training scripts, hyperparameter tuning, metrics
-│   │   └── __init__.py
-│   ├── explainability/          # SHAP explainers & interpretation utilities
+│   │   ├── __init__.py          # Model subpackage exports
+│   │   ├── registry.py          # Pipeline factory (Dummy, LogReg, RF, GBDT)
+│   │   ├── evaluation.py        # Metrics, ROC-AUC, PR-AUC, threshold curves
+│   │   └── trainer.py           # Cross-validation, model comparison, artifact exporter
+│   ├── explainability/          # (Phase 5) SHAP explainers & interpretation utilities
 │   │   └── __init__.py
 │   └── utils/                   # Config management, logging, plotting helpers
 │       └── __init__.py
 │
-├── models/                      # Trained model artifacts (.joblib / .pkl)
-│   └── .gitkeep
+├── models/                      # Serialized model artifacts (.joblib / .json)
+│   ├── churn_model.joblib       # Champion Random Forest end-to-end Pipeline
+│   └── model_metadata.json      # Metadata, test metrics, and threshold curves
 │
 ├── scripts/
 │   ├── download_data.py         # Standalone CLI for dataset download & provenance
 │   ├── run_data_pipeline.py     # Single-command entry point for the data pipeline
 │   ├── generate_eda_notebook.py # Programmatically compiles & executes the EDA notebook
+│   ├── train_and_benchmark.py   # Single-command CLI for model benchmarking & export
 │   └── verify_environment.py    # Environment health check script
 │
 ├── tests/                       # Unit and integration test suite (pytest)
@@ -171,6 +188,7 @@ customer_churn_intelligence/
 │   ├── test_data_validator.py   # Validator tests (schema, target, whitespace)
 │   ├── test_data_cleaner.py     # Cleaner tests (impute_zero, drop, regression tests)
 │   ├── test_features.py         # Feature engineering & leakage tests
+│   ├── test_models.py           # Model factory, evaluation, and pipeline tests
 │   └── test_pipeline.py         # End-to-end integration tests
 │
 ├── backend/                     # (Phase 6) FastAPI backend service
@@ -179,35 +197,29 @@ customer_churn_intelligence/
 
 ---
 
-## 🗺️ 7. Learning & Implementation Roadmap
+## 🗺️ 6. Learning & Implementation Roadmap
 
 | Phase | Milestone | Core Concepts & Deliverables | Status |
 |---|---|---|---|
 | **Phase 1** | **Project Foundation & Environment Setup** | Virtual environment, directory structure, requirements, `.gitignore`, verification test. | ✅ Completed |
 | **Phase 2** | **Implement the Real Data Pipeline** | Verified dataset ingestion, schema validation, documented cleaning rules, automated tests, CLI entry points. | ✅ Completed |
 | **Phase 3** | **Exploratory Data Analysis (EDA) & Feature Engineering** | Distribution analysis, one-hot encoding, feature scaling, preventing data leakage. | ✅ Completed |
-| **Phase 4** | **Model Training, Evaluation & Benchmarking** | Baseline Logistic Regression, Random Forest, Gradient Boosting; Precision/Recall/ROC-AUC evaluation. | ⏳ Next |
-| **Phase 5** | **Model Explainability with SHAP** | Global feature importance (summary plots) and local individual customer explanations (waterfall plots). | ⏳ Planned |
+| **Phase 4** | **Model Training, Evaluation & Benchmarking** | Baseline Logistic Regression, Random Forest, Gradient Boosting; Precision/Recall/ROC-AUC evaluation, threshold tuning. | ✅ Completed |
+| **Phase 5** | **Model Explainability with SHAP** | Global feature importance (summary plots) and local individual customer explanations (waterfall plots). | ⏳ Next |
 | **Phase 6** | **FastAPI Backend Integration** | RESTful endpoints for single and batch predictions, request validation schemas, health checks. | ⏳ Planned |
 | **Phase 7** | **Interactive Web Dashboard** | Modern React + TypeScript UI for customer success teams to simulate retention strategies. | ⏳ Planned |
 | **Phase 8** | **Interview Preparation & Placement Walkthrough** | Deep-dive explanations, common interviewer questions, architectural trade-offs, and deployment discussion. | ⏳ Planned |
 
 ---
 
-## 🚀 8. Execution Commands
+## 🚀 7. Execution Commands
 
-### Run Data Pipeline
+### Run Model Training, Benchmarking & Artifact Export
 ```powershell
-python scripts/run_data_pipeline.py
+python scripts/train_and_benchmark.py
 ```
 
-### Run EDA Notebook Generation & Verification
-```powershell
-python scripts/generate_eda_notebook.py
-```
-*(Or open [`notebooks/01_exploratory_data_analysis.ipynb`](file:///d:/@PROJECTS/ML/customer_churn_intelligence/notebooks/01_exploratory_data_analysis.ipynb) in Jupyter / VS Code / Antigravity IDE).*
-
-### Run Full Automated Test Suite (29 Tests)
+### Run Full Automated Test Suite (36 Tests)
 ```powershell
 pytest -v tests
 ```
