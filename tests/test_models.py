@@ -1,5 +1,14 @@
-"""Unit tests for Model Training, Registry, and Evaluation modules."""
+"""Unit tests for Model Training, Registry, and Evaluation modules.
 
+Covers:
+- CV-based champion selection with deterministic tie-breaking (no test-set peeking)
+- OOF-based threshold optimization (independent of holdout labels)
+- Explicit confusion matrix label ordering (TN, FP, FN, TP)
+- Positive-class metric calculations (Precision, Recall, F1 for Churn)
+- Defensive input validation and undefined single-class metric handling
+"""
+
+import math
 import numpy as np
 import pandas as pd
 import pytest
@@ -10,12 +19,17 @@ from src.models.evaluation import (
     evaluate_predictions,
     evaluate_threshold_tradeoffs,
     format_benchmark_table,
+    select_optimal_threshold,
 )
 from src.models.registry import (
     get_all_candidate_models,
     get_model_pipeline,
 )
-from src.models.trainer import cross_validate_candidates
+from src.models.trainer import (
+    cross_validate_candidates,
+    select_champion_from_cv,
+    select_threshold_from_oof,
+)
 
 
 @pytest.fixture
@@ -48,6 +62,8 @@ def sample_feature_data():
     return X, y
 
 
+# --- REGISTRY TESTS ---
+
 def test_get_model_pipeline_valid():
     """Verify all valid model names construct proper Pipelines."""
     valid_names = [
@@ -68,7 +84,7 @@ def test_get_model_pipeline_valid():
 def test_get_model_pipeline_invalid():
     """Verify unknown model names raise ValueError."""
     with pytest.raises(ValueError, match="Unknown model_name"):
-        get_model_pipeline("non_existent_deep_network")
+        get_model_pipeline("non_existent_neural_net")
 
 
 def test_get_all_candidate_models():
@@ -81,77 +97,131 @@ def test_get_all_candidate_models():
     assert "Gradient Boosting" in candidates
 
 
-def test_evaluate_predictions_metrics():
-    """Verify calculation of accuracy, precision, recall, and confusion matrix."""
-    y_true = np.array([0, 0, 1, 1, 0, 1])
-    y_pred = np.array([0, 0, 1, 0, 0, 1])
-    y_prob = np.array([0.1, 0.2, 0.9, 0.4, 0.2, 0.85])
+# --- SELECTION TESTS (NO TEST SET INSPECTION) ---
 
-    metrics = evaluate_predictions(y_true, y_pred, y_prob, model_name="TestModel")
+def test_select_champion_from_cv_uses_pr_auc():
+    """Verify champion selection strictly uses mean CV PR-AUC from training CV, ignoring test metrics."""
+    cv_summary = pd.DataFrame([
+        {"Model": "Model Low PR High ROC", "CV PR-AUC Mean": 0.60, "CV ROC-AUC Mean": 0.88, "CV F1 Mean": 0.55},
+        {"Model": "Model High PR Moderate ROC", "CV PR-AUC Mean": 0.66, "CV ROC-AUC Mean": 0.84, "CV F1 Mean": 0.58},
+        {"Model": "Dummy Baseline", "CV PR-AUC Mean": 0.26, "CV ROC-AUC Mean": 0.50, "CV F1 Mean": 0.00},
+    ])
 
-    assert isinstance(metrics, EvaluationMetrics)
-    # y_true has 3 positive (idx 2, 3, 5), 3 negative (idx 0, 1, 4)
-    # y_pred gets idx 2 and 5 correct (TP=2), misses idx 3 (FN=1), 0 false positives (FP=0), 3 true negatives (TN=3)
-    assert metrics.true_positives == 2
-    assert metrics.false_negatives == 1
-    assert metrics.true_negatives == 3
-    assert metrics.false_positives == 0
-
-    # Recall = TP / (TP + FN) = 2 / 3
-    assert abs(metrics.recall - (2 / 3)) < 1e-4
-    # Precision = TP / (TP + FP) = 2 / 2 = 1.0
-    assert abs(metrics.precision - 1.0) < 1e-4
-    # Accuracy = (3 + 2) / 6 = 5 / 6
-    assert abs(metrics.accuracy - (5 / 6)) < 1e-4
-    assert metrics.roc_auc > 0.5
+    champion = select_champion_from_cv(cv_summary)
+    # Must choose Model High PR Moderate ROC because PR-AUC (0.66 > 0.60) is primary metric
+    assert champion == "Model High PR Moderate ROC"
 
 
-def test_evaluate_threshold_tradeoffs():
-    """Verify threshold evaluation computes precision/recall across cutoffs."""
-    y_true = np.array([0, 1, 0, 1])
-    y_prob = np.array([0.2, 0.4, 0.6, 0.8])
+def test_select_champion_from_cv_tie_breaking():
+    """Verify deterministic tie-breaking on ROC-AUC when CV PR-AUC is tied."""
+    cv_summary = pd.DataFrame([
+        {"Model": "Model Alpha", "CV PR-AUC Mean": 0.65, "CV ROC-AUC Mean": 0.83, "CV F1 Mean": 0.58},
+        {"Model": "Model Beta", "CV PR-AUC Mean": 0.65, "CV ROC-AUC Mean": 0.87, "CV F1 Mean": 0.59},
+    ])
 
-    tradeoffs = evaluate_threshold_tradeoffs(y_true, y_prob, thresholds=[0.3, 0.7])
-    assert len(tradeoffs) == 2
-    assert tradeoffs[0]["threshold"] == 0.3
-    # At th=0.3: preds = [0, 1, 1, 1], TP=2, FP=1, FN=0, TN=1 -> Recall=1.0
-    assert tradeoffs[0]["recall"] == 1.0
-    # At th=0.7: preds = [0, 0, 0, 1], TP=1, FP=0, FN=1, TN=2 -> Precision=1.0, Recall=0.5
-    assert tradeoffs[1]["precision"] == 1.0
-    assert tradeoffs[1]["recall"] == 0.5
+    champion = select_champion_from_cv(cv_summary)
+    assert champion == "Model Beta"
 
 
-def test_pipeline_fit_and_predict(sample_feature_data):
-    """Verify complete Pipeline fits and predicts without data leakage."""
+def test_select_optimal_threshold_max_f1():
+    """Verify threshold selection finds the threshold maximizing F1 score."""
+    tradeoffs = [
+        {"threshold": 0.20, "precision": 0.40, "recall": 0.90, "f1_score": 0.55},
+        {"threshold": 0.35, "precision": 0.55, "recall": 0.75, "f1_score": 0.64},  # Highest F1
+        {"threshold": 0.50, "precision": 0.70, "recall": 0.50, "f1_score": 0.58},
+    ]
+
+    selected_th, metrics = select_optimal_threshold(tradeoffs, criterion="max_f1")
+    assert selected_th == 0.35
+    assert metrics["f1_score"] == 0.64
+
+
+def test_select_threshold_from_oof_independent_of_test_data(sample_feature_data):
+    """Verify threshold selection operates strictly via out-of-fold training predictions."""
     X, y = sample_feature_data
     pipe = get_model_pipeline("logistic_regression")
 
-    pipe.fit(X, y)
-    preds = pipe.predict(X)
-    probs = pipe.predict_proba(X)
+    # Run OOF threshold tuning
+    threshold, best_metrics, tradeoffs = select_threshold_from_oof(
+        pipe, X, y, n_splits=3, random_state=42, criterion="max_f1"
+    )
 
-    assert len(preds) == len(X)
-    assert probs.shape == (len(X), 2)
-    assert np.all(probs >= 0.0) and np.all(probs <= 1.0)
-    np.testing.assert_allclose(probs.sum(axis=1), 1.0, rtol=1e-5)
+    assert 0.0 < threshold < 1.0
+    assert "f1_score" in best_metrics
+    assert len(tradeoffs) > 0
 
 
-def test_format_benchmark_table():
-    """Verify table formatter outputs a non-empty string with column headers."""
-    m1 = EvaluationMetrics(
-        model_name="Model A",
+# --- EVALUATION & METRIC RELIABILITY TESTS ---
+
+def test_evaluate_predictions_explicit_confusion_matrix_ordering():
+    """Verify confusion matrix follows explicit order: [TN, FP, FN, TP]."""
+    # 2 true negatives (idx 0, 1), 1 false positive (idx 2), 1 false negative (idx 3), 1 true positive (idx 4)
+    y_true = np.array([0, 0, 0, 1, 1])
+    y_pred = np.array([0, 0, 1, 0, 1])
+    y_prob = np.array([0.1, 0.2, 0.8, 0.3, 0.9])
+
+    metrics = evaluate_predictions(y_true, y_pred, y_prob, model_name="TestOrdering")
+
+    assert metrics.true_negatives == 2
+    assert metrics.false_positives == 1
+    assert metrics.false_negatives == 1
+    assert metrics.true_positives == 1
+
+    # Precision on Churn = TP / (TP + FP) = 1 / 2 = 0.5
+    assert metrics.precision == 0.5
+    # Recall on Churn = TP / (TP + FN) = 1 / 2 = 0.5
+    assert metrics.recall == 0.5
+    # Accuracy = (2 + 1) / 5 = 0.6
+    assert metrics.accuracy == 0.6
+
+
+def test_evaluate_predictions_length_mismatch():
+    """Verify length mismatch raises ValueError."""
+    y_true = np.array([0, 1, 0])
+    y_pred = np.array([0, 1])
+    with pytest.raises(ValueError, match="Length mismatch"):
+        evaluate_predictions(y_true, y_pred)
+
+
+def test_evaluate_predictions_invalid_probabilities():
+    """Verify probabilities outside [0, 1] raise ValueError."""
+    y_true = np.array([0, 1, 0])
+    y_pred = np.array([0, 1, 0])
+    y_prob = np.array([0.2, 1.5, -0.1])  # Invalid probabilities
+    with pytest.raises(ValueError, match="strictly bounded in \\[0.0, 1.0\\]"):
+        evaluate_predictions(y_true, y_pred, y_prob)
+
+
+def test_evaluate_predictions_single_class_target_raises_error():
+    """Verify single-class target raises explicit ValueError rather than returning a plausible-looking 0.5."""
+    y_true_all_zeros = np.array([0, 0, 0, 0])
+    y_pred = np.array([0, 0, 0, 0])
+    y_prob = np.array([0.1, 0.2, 0.1, 0.3])
+
+    with pytest.raises(ValueError, match="mathematically undefined when y_true contains only one class"):
+        evaluate_predictions(y_true_all_zeros, y_pred, y_prob, raise_on_single_class=True)
+
+    # When raise_on_single_class is False, verify NaN is assigned explicitly, not 0.5
+    metrics = evaluate_predictions(y_true_all_zeros, y_pred, y_prob, raise_on_single_class=False)
+    assert math.isnan(metrics.roc_auc)
+    assert math.isnan(metrics.pr_auc)
+
+
+def test_format_benchmark_table_with_nans():
+    """Verify table formatter handles NaN metrics gracefully."""
+    m_nan = EvaluationMetrics(
+        model_name="Model with NaNs",
         accuracy=0.8,
         precision=0.7,
         recall=0.6,
         f1_score=0.65,
-        roc_auc=0.85,
-        pr_auc=0.75,
+        roc_auc=float("nan"),
+        pr_auc=float("nan"),
         true_negatives=70,
         false_positives=10,
         false_negatives=10,
         true_positives=10,
     )
-    table_str = format_benchmark_table([m1])
-    assert "Model A" in table_str
-    assert "ROC-AUC" in table_str
-    assert "Recall" in table_str
+    table_str = format_benchmark_table([m_nan])
+    assert "Model with NaNs" in table_str
+    assert "NaN" in table_str

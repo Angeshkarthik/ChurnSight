@@ -9,7 +9,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.models.trainer import run_model_benchmarking
+from src.models.trainer import (
+    CV_SPLIT_SEED,
+    FRESH_HOLDOUT_SEED,
+    run_model_benchmarking,
+)
 
 
 def main():
@@ -35,10 +39,16 @@ def main():
         help="Test set size fraction (default: 0.2)",
     )
     parser.add_argument(
-        "--seed",
+        "--holdout-seed",
         type=int,
-        default=42,
-        help="Random seed for reproducibility (default: 42)",
+        default=FRESH_HOLDOUT_SEED,
+        help="Seed for fresh independent holdout split (default: 100)",
+    )
+    parser.add_argument(
+        "--cv-seed",
+        type=int,
+        default=CV_SPLIT_SEED,
+        help="Seed for stratified cross-validation within development set (default: 42)",
     )
     parser.add_argument(
         "--no-export",
@@ -52,7 +62,8 @@ def main():
         data_path=args.data_path,
         output_dir=args.output_dir,
         test_size=args.test_size,
-        random_state=args.seed,
+        holdout_seed=args.holdout_seed,
+        cv_seed=args.cv_seed,
         export_artifacts=not args.no_export,
         verbose=True,
     )

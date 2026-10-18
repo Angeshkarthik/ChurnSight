@@ -3,8 +3,8 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/Dataset%20License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Code Style: Clean Architecture](https://img.shields.io/badge/architecture-modular-brightgreen.svg)](#planned-architecture)
-[![Test Suite: Pytest](https://img.shields.io/badge/tests-36%20passed-brightgreen.svg)](#running-automated-tests)
-[![Champion Model: Random Forest](https://img.shields.io/badge/champion-Random%20Forest%20(ROC--AUC%200.844)-blueviolet.svg)](#model-benchmarking--evaluation-phase-4)
+[![Test Suite: Pytest](https://img.shields.io/badge/tests-41%20passed-brightgreen.svg)](#running-automated-tests)
+[![Champion Model: Gradient Boosting](https://img.shields.io/badge/champion-Gradient%20Boosting%20(CV%20PR--AUC%200.672)-blueviolet.svg)](#3-model-benchmarking--rigorous-evaluation-phase-4)
 
 An end-to-end Machine Learning and Full-Stack software engineering application designed to predict customer churn, explain individual risk drivers using Explainable AI (SHAP), and empower customer success teams with proactive retention intelligence.
 
@@ -16,15 +16,9 @@ An end-to-end Machine Learning and Full-Stack software engineering application d
 **Customer Churn** occurs when a customer cancels their subscription or ceases doing business with a company over a given time horizon. 
 
 In subscription-based industries (like telecommunications, SaaS, and banking):
-- **High Acquisition Cost:** Acquiring a new customer typically costs **5x to 25x more** than retaining an existing customer.
-- **Compounding Revenue Loss:** Losing high-value or long-tenure customers significantly degrades customer lifetime value (LTV).
-- **The Retention Opportunity:** Even a 5% increase in customer retention can boost profitability by 25% to 95% (Bain & Company / Harvard Business Review).
-
-### The Objective
-Instead of reacting *after* a customer leaves, this platform builds a predictive early-warning system that:
-1. Predicts **who** is at high risk of churning (churn probability score).
-2. Explains **why** they are likely to churn (actionable local feature importance).
-3. Delivers actionable intelligence through a **FastAPI backend** and an **interactive React + TypeScript dashboard** for customer success teams.
+- **Customer Lifetime Value (LTV):** Customer retention directly preserves recurring revenue; losing an existing subscriber incurs immediate top-line decline and replacement acquisition overhead *(Gallo, Amy. "The Value of Keeping the Right Customers", Harvard Business Review, 2014)*.
+- **The Retention Opportunity:** Increasing customer retention by even 5% has been shown to produce substantial enterprise profit growth *(Reichheld, Frederick. Bain & Company / HBR)*.
+- **The Predictive Advantage:** Instead of reacting *after* a customer leaves, this platform builds an early-warning classification system that flags at-risk accounts, quantifies risk drivers, and recommends retention actions before contracts expire.
 
 ---
 
@@ -44,51 +38,69 @@ To maintain complete reproducibility and data governance, we use the industry-st
 
 ---
 
-## 🏆 3. Model Benchmarking & Evaluation (Phase 4)
+## 🏆 3. Model Benchmarking & Rigorous Evaluation (Phase 4)
 
-We implemented an evaluation harness using **5-Fold Stratified Cross-Validation on `X_train`** (5,634 samples) and evaluated candidate models on a strictly held-out **Test Set** (1,409 samples). Preprocessing was encapsulated inside Scikit-learn `Pipeline` objects to guarantee zero test leakage.
+### Methodological Rigor & Data Governance
+To prevent data snooping and selection leakage, our benchmarking enforces strict separation across three stages:
+1. **Partitioning:** Data is split into a **Development Set** (80%, $N = 5,634$) and a **Fresh Independent Holdout** (20%, $N = 1,409$, `holdout_seed = 100`).
+2. **Champion Selection:** The champion model is selected **strictly using 5-Fold Stratified Cross-Validation on Development Data (`cv_seed = 42`)**, using mean CV PR-AUC as the primary metric with a deterministic tie-breaker. *No holdout data is inspected during model selection.*
+3. **Threshold Optimization:** The operational probability decision threshold is tuned **strictly on Out-Of-Fold (OOF) development predictions** by maximizing OOF F1-score, before freezing the model and threshold.
+4. **Independent Final Evaluation:** The frozen champion pipeline and frozen threshold are evaluated **once on the untouched Fresh Holdout**.
 
-### 5-Fold Stratified Cross-Validation Results (Training Set Only)
+---
 
-| Model Architecture | CV ROC-AUC | CV PR-AUC | CV Recall | CV Precision | CV F1 | CV Accuracy |
+### 5-Fold Stratified Cross-Validation Summary (Development Set Only: $N = 5,634$)
+
+| Model Architecture | CV PR-AUC Mean | CV ROC-AUC Mean | CV F1 Mean | CV Recall Mean | CV Precision Mean | CV Accuracy Mean | Selection Status |
+|---|---|---|---|---|---|---|---|
+| **Gradient Boosting** | **0.6721 ± 0.0180** | **0.8484 ± 0.0060** | 0.5829 | 0.5211 | 0.6630 | 80.23% | 🏆 **Champion** |
+| **Hist Gradient Boosting** | 0.6661 ± 0.0168 | 0.8443 ± 0.0057 | 0.5813 | 0.5224 | 0.6565 | 80.05% | Contender |
+| **Random Forest** | 0.6632 ± 0.0181 | 0.8482 ± 0.0085 | 0.5745 | 0.4997 | **0.6768** | **80.37%** | Contender |
+| **Logistic Regression** | 0.6611 ± 0.0177 | 0.8473 ± 0.0098 | 0.6027 | 0.5538 | 0.6613 | 80.64% | Linear Baseline |
+| **Logistic Regression (Balanced)** | 0.6604 ± 0.0171 | 0.8473 ± 0.0098 | **0.6281** | **0.8000** | 0.5171 | 74.87% | High Recall Baseline |
+| **Dummy Baseline** | 0.2654 ± 0.0001 | 0.5000 ± 0.0000 | 0.0000 | 0.0000 | 0.0000 | 73.46% | Sanity Floor |
+
+---
+
+### Operational Threshold Selection via Out-Of-Fold (OOF) Training Predictions
+
+Evaluating decision thresholds strictly on Out-Of-Fold (OOF) training predictions on the Development set identified **$P \ge 0.35$** as the optimal operational threshold maximizing F1:
+
+- **Optimal OOF Threshold:** **0.35**
+- **OOF Metrics at 0.35:** F1 = **0.6319** | Recall = **0.7003** | Precision = **0.5756**
+- *Business Rationale:* Shifting the cutoff from 0.50 to 0.35 captures **70.0% of all churning accounts** while maintaining a solid **57.6% precision**.
+
+---
+
+### Independent Final Evaluation: Fresh Holdout ($N = 1,409$, `holdout_seed = 100`)
+
+Evaluated strictly after freezing the champion architecture (Gradient Boosting) and threshold (0.35):
+
+| Evaluated Model Pipeline | ROC-AUC | PR-AUC | Recall (Churn) | Precision (Churn) | F1-Score | Accuracy |
 |---|---|---|---|---|---|---|
-| **Gradient Boosting** | **0.8482 ± 0.0126** | **0.6676 ± 0.0222** | 0.5291 ± 0.0305 | 0.6622 | 0.5880 | 80.33% |
-| **Random Forest** | 0.8471 ± 0.0084 | 0.6630 ± 0.0168 | 0.5070 ± 0.0198 | **0.6730** | 0.5781 | **80.35%** |
-| **Logistic Regression** | 0.8461 ± 0.0126 | 0.6615 ± 0.0194 | 0.5438 ± 0.0409 | 0.6521 | 0.5924 | 80.19% |
-| **Hist Gradient Boosting** | 0.8451 ± 0.0103 | 0.6612 ± 0.0228 | 0.5258 ± 0.0250 | 0.6590 | 0.5846 | 80.17% |
-| **Logistic Regression (Balanced)** | 0.8460 ± 0.0124 | 0.6601 ± 0.0196 | **0.8013 ± 0.0379** | 0.5169 | **0.6283** | 74.85% |
-| **Dummy Baseline** | 0.5000 ± 0.0000 | 0.2654 ± 0.0001 | 0.0000 ± 0.0000 | 0.0000 | 0.0000 | 73.46% |
-
-### Held-Out Test Set Performance (N = 1,409)
-
-| Model | ROC-AUC | PR-AUC | Recall (Churn) | Precision (Churn) | F1-Score | Accuracy |
-|---|---|---|---|---|---|---|
-| **Random Forest (Champion)** | **0.8437** | **0.6601** | 0.5053 | 0.6608 | 0.5727 | 79.99% |
-| **Gradient Boosting** | 0.8433 | 0.6600 | 0.5160 | **0.6655** | 0.5813 | 80.27% |
-| **Logistic Regression** | 0.8420 | 0.6337 | 0.5588 | 0.6572 | 0.6040 | **80.55%** |
-| **Logistic Regression (Balanced)** | 0.8415 | 0.6325 | **0.7834** | 0.5043 | **0.6136** | 73.81% |
-| **Hist Gradient Boosting** | 0.8398 | 0.6512 | 0.5134 | 0.6508 | 0.5740 | 79.77% |
+| **Gradient Boosting (Th=0.35 Operational)** | **0.8413** | **0.6447** | **0.7139** | 0.5597 | **0.6275** | 77.50% |
+| **Gradient Boosting (Th=0.50 Standard)** | **0.8413** | **0.6447** | 0.5428 | **0.6444** | 0.5893 | **79.91%** |
+| **Logistic Regression** | 0.8359 | 0.6300 | 0.5508 | 0.6417 | 0.5928 | **79.91%** |
+| **Logistic Regression (Balanced)** | 0.8360 | 0.6285 | **0.8316** | 0.5107 | 0.6328 | 74.38% |
+| **Random Forest** | 0.8373 | 0.6492 | 0.4973 | 0.6526 | 0.5645 | 79.63% |
+| **Hist Gradient Boosting** | 0.8323 | 0.6322 | 0.5535 | 0.6409 | 0.5940 | **79.91%** |
 | **Dummy Baseline** | 0.5000 | 0.2654 | 0.0000 | 0.0000 | 0.0000 | 73.46% |
 
-### Business Confusion Matrix & Threshold Trade-Off Analysis
+---
 
-On the held-out test set at the default threshold $P \ge 0.50$, **Random Forest** produced:
-- **True Negatives (TN):** 938 correctly identified retained customers.
-- **False Positives (FP):** 97 loyal customers flagged as churn risks (wasted retention effort).
-- **False Negatives (FN):** 185 churners missed (lost customer revenue).
-- **True Positives (TP):** 189 churners caught and flagged for intervention.
+### Confusion Matrix Analysis on Fresh Holdout
 
-#### Threshold Tuning: The Business Decision
-Because acquiring a new customer is 5x–25x more expensive than retaining an existing one, missing a churner (FN) is far more damaging than reaching out to a satisfied customer (FP). 
+At the operational threshold **$P \ge 0.35$**, the frozen **Gradient Boosting Champion** achieved:
 
-By lowering the decision threshold, customer success teams can tune the trade-off:
+```text
+Confusion Matrix (labels=[0, 1]):
+  [TN:  825 (True Retained)   | FP:  210 (False Alarms)]
+  [FN:  107 (Missed Churners) | TP:  267 (Caught Churners)]
+```
 
-| Threshold | Churners Caught (Recall) | Precision | F1-Score | Churners Missed (FN) | False Alarms (FP) | Strategic Context |
-|---|---|---|---|---|---|---|
-| **0.20** | **85.83%** (321 / 374) | 46.32% | 0.6017 | **53** | 372 | Aggressive early-warning: catches ~86% of all churn. |
-| **0.30** | **78.07%** (292 / 374) | **53.28%** | **0.6334** | **82** | 256 | **Recommended Sweet Spot:** Highest F1 score, catches ~78% of churn with >53% precision. |
-| **0.40** | 64.97% (243 / 374) | 58.27% | 0.6144 | 131 | 174 | Moderate retention intervention. |
-| **0.50 (Default)**| 50.53% (189 / 374) | 66.08% | 0.5727 | 185 | 97 | Conservative: high precision, but misses half of churners. |
+- **True Positives (TP = 267):** Successfully identified **71.39% of all churners** (267 out of 374).
+- **False Negatives (FN = 107):** Missed churners were cut down from 171 (under standard 0.50 threshold) to 107.
+- **False Positives (FP = 210):** Proactive outreach sent to customers who would have stayed anyway. Because retention check-ins or targeted discounts carry minor cost compared to lost recurring contract revenue, this operational balance yields optimal business ROI.
 
 ---
 
@@ -115,7 +127,7 @@ By lowering the decision threshold, customer success teams can tune the trade-of
 │                   Machine Learning Core (src/)              │
 │  ┌────────────────────┐  ┌──────────────────────────────┐   │
 │  │ Feature Pipeline   │  │ Serialized Model (.joblib)   │   │
-│  │ (OneHot/Scaling)   │  │ (Random Forest Champion)     │   │
+│  │ (OneHot/Scaling)   │  │ (Gradient Boosting Champion) │   │
 │  └────────────────────┘  └──────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │ SHAP Explainer (TreeExplainer)                       │   │
@@ -163,17 +175,17 @@ customer_churn_intelligence/
 │   │   └── pipeline.py          # ColumnTransformer, leak-free preprocessing
 │   ├── models/                  # Training scripts, hyperparameter tuning, metrics
 │   │   ├── __init__.py          # Model subpackage exports
-│   │   ├── registry.py          # Pipeline factory (Dummy, LogReg, RF, GBDT)
-│   │   ├── evaluation.py        # Metrics, ROC-AUC, PR-AUC, threshold curves
-│   │   └── trainer.py           # Cross-validation, model comparison, artifact exporter
+│   │   ├── registry.py          # Pipeline factory (Dummy, LogReg, RF, GBDT, HistGBDT)
+│   │   ├── evaluation.py        # Metrics, ROC-AUC, PR-AUC, threshold curves, input validation
+│   │   └── trainer.py           # Training-only CV selection, OOF threshold tuning, holdout eval
 │   ├── explainability/          # (Phase 5) SHAP explainers & interpretation utilities
 │   │   └── __init__.py
 │   └── utils/                   # Config management, logging, plotting helpers
 │       └── __init__.py
 │
 ├── models/                      # Serialized model artifacts (.joblib / .json)
-│   ├── churn_model.joblib       # Champion Random Forest end-to-end Pipeline
-│   └── model_metadata.json      # Metadata, test metrics, and threshold curves
+│   ├── churn_model.joblib       # Serialized Gradient Boosting end-to-end Pipeline
+│   └── model_metadata.json      # Metadata, OOF threshold curves, governance audit logs
 │
 ├── scripts/
 │   ├── download_data.py         # Standalone CLI for dataset download & provenance
@@ -188,7 +200,7 @@ customer_churn_intelligence/
 │   ├── test_data_validator.py   # Validator tests (schema, target, whitespace)
 │   ├── test_data_cleaner.py     # Cleaner tests (impute_zero, drop, regression tests)
 │   ├── test_features.py         # Feature engineering & leakage tests
-│   ├── test_models.py           # Model factory, evaluation, and pipeline tests
+│   ├── test_models.py           # Model factory, selection, OOF threshold, evaluation tests
 │   └── test_pipeline.py         # End-to-end integration tests
 │
 ├── backend/                     # (Phase 6) FastAPI backend service
@@ -204,7 +216,7 @@ customer_churn_intelligence/
 | **Phase 1** | **Project Foundation & Environment Setup** | Virtual environment, directory structure, requirements, `.gitignore`, verification test. | ✅ Completed |
 | **Phase 2** | **Implement the Real Data Pipeline** | Verified dataset ingestion, schema validation, documented cleaning rules, automated tests, CLI entry points. | ✅ Completed |
 | **Phase 3** | **Exploratory Data Analysis (EDA) & Feature Engineering** | Distribution analysis, one-hot encoding, feature scaling, preventing data leakage. | ✅ Completed |
-| **Phase 4** | **Model Training, Evaluation & Benchmarking** | Baseline Logistic Regression, Random Forest, Gradient Boosting; Precision/Recall/ROC-AUC evaluation, threshold tuning. | ✅ Completed |
+| **Phase 4** | **Model Training, Evaluation & Benchmarking** | Training-only CV champion selection, OOF threshold optimization, independent holdout evaluation. | ✅ Completed |
 | **Phase 5** | **Model Explainability with SHAP** | Global feature importance (summary plots) and local individual customer explanations (waterfall plots). | ⏳ Next |
 | **Phase 6** | **FastAPI Backend Integration** | RESTful endpoints for single and batch predictions, request validation schemas, health checks. | ⏳ Planned |
 | **Phase 7** | **Interactive Web Dashboard** | Modern React + TypeScript UI for customer success teams to simulate retention strategies. | ⏳ Planned |
@@ -218,8 +230,13 @@ customer_churn_intelligence/
 ```powershell
 python scripts/train_and_benchmark.py
 ```
+Supported flags:
+- `--holdout-seed 100` *(Independent holdout partition seed, default: 100)*
+- `--cv-seed 42` *(Stratified cross-validation seed within development set, default: 42)*
+- `--test-size 0.2` *(Holdout fraction, default: 0.2)*
 
-### Run Full Automated Test Suite (36 Tests)
+### Run Full Automated Test Suite (41 Tests)
 ```powershell
 pytest -v tests
 ```
+All 41 unit and integration tests validate loading, schema integrity, custom exceptions, cleaning logic, feature leakage prevention, CV selection, OOF threshold tuning, explicit confusion matrix order, and end-to-end pipeline execution.
