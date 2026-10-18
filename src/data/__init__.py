@@ -17,6 +17,7 @@ from src.data.cleaner import (
     clean_telco_churn_data,
     save_processed_data,
     CleaningReport,
+    DataCleaningError,
 )
 from src.data.pipeline import run_data_pipeline, PipelineResult
 
@@ -34,6 +35,7 @@ __all__ = [
     "clean_telco_churn_data",
     "save_processed_data",
     "CleaningReport",
+    "DataCleaningError",
     "run_data_pipeline",
     "PipelineResult",
 ]
