@@ -3,7 +3,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/Dataset%20License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Code Style: Clean Architecture](https://img.shields.io/badge/architecture-modular-brightgreen.svg)](#planned-architecture)
-[![Test Suite: Pytest](https://img.shields.io/badge/tests-15%20passed-brightgreen.svg)](#running-automated-tests)
+[![Test Suite: Pytest](https://img.shields.io/badge/tests-29%20passed-brightgreen.svg)](#running-automated-tests)
 
 An end-to-end Machine Learning and Full-Stack software engineering application designed to predict customer churn, explain individual risk drivers using Explainable AI (SHAP), and empower customer success teams with proactive retention intelligence.
 
@@ -43,18 +43,44 @@ To maintain complete reproducibility and data governance, we use the industry-st
 
 ---
 
-## ⚙️ 3. Data Pipeline & Quality Engineering (Phase 2)
+## 🔍 3. Exploratory Data Analysis & Empirical Findings (Phase 3)
 
-### The Real-World Data Anomaly: `TotalCharges` Whitespace
-When loading the raw dataset, `TotalCharges` is parsed as an `object` (string) column rather than `float64`. 
-- **Root Cause:** 11 customer records contain whitespace strings (`" "`) instead of numeric charges.
-- **Investigation:** Cross-referencing reveals that **all 11 rows have `tenure == 0`**. These are brand new customer accounts opened in the current billing cycle who have not yet received their first invoice.
-- **Domain-Accurate Decision:** We set `TotalCharges = 0.0` for `tenure == 0` accounts (`strategy="impute_zero"`). A customer with 0 months of service has accumulated $0.00 in historical charges. This preserves all 7,043 customer records without introducing statistical distortion.
-- **Alternative:** The cleaner also supports `strategy="drop"` for use-cases requiring strict exclusion of newly enrolled users.
+The complete interactive analysis is documented in [`notebooks/01_exploratory_data_analysis.ipynb`](file:///d:/@PROJECTS/ML/customer_churn_intelligence/notebooks/01_exploratory_data_analysis.ipynb).
+
+### Key Empirical Findings:
+
+| Driver | Group / Value | Churn Rate | Business & Behavioral Insight |
+|---|---|---|---|
+| **Contract Type** | Month-to-month | **42.71%** | Highest churn risk. Lack of commitment allows customers to leave at any time. |
+| | One year | **11.27%** | Annual commitment cuts churn by ~74%. |
+| | Two year | **2.83%** | Over 97% retained. Long-term contracts virtually eliminate churn. |
+| **Tenure** | 0–12 Months | **47.44%** | Nearly half of all churn happens in year 1. Critical onboarding window. |
+| | 49–72 Months | **9.51%** | Long-tenure customers demonstrate strong brand loyalty. |
+| **Internet Service** | Fiber optic | **41.89%** | Premium speed but high price point ($70–$118/mo) drives price sensitivity. |
+| | DSL | **18.96%** | Lower monthly cost, moderate churn. |
+| | No Internet | **7.41%** | Landline-only customers are overwhelmingly retained. |
+| **Payment Method** | Electronic check | **45.29%** | Manual monthly billing forces conscious reassessment of bills. |
+| | Credit Card (auto) | **15.24%** | Automatic billing creates retention inertia. |
+| | Bank Transfer (auto)| **16.71%** | Automated payment reduces friction. |
+| **Support Services**| No TechSupport | **41.64%** | Unresolved technical issues strongly correlate with cancellation. |
+| | With TechSupport | **15.17%** | Bundled tech support cuts churn by more than half. |
 
 ---
 
-## 🏗️ 4. Planned Architecture
+## ⚙️ 4. Feature Engineering & Leakage Prevention (Phase 3)
+
+Located in [`src/features/`](file:///d:/@PROJECTS/ML/customer_churn_intelligence/src/features/):
+
+1. **Identifier Exclusion:** `customerID` is stripped from predictor matrix $X$. An arbitrary alphanumeric string (`7590-VHVEG`) would otherwise lead to ID memorization and catastrophic overfitting.
+2. **Target Isolation:** `Churn` is mapped to binary integers (`Yes` $\to$ 1, `No` $\to$ 0) and isolated into $y$.
+3. **Data Leakage Elimination:**
+   - Transformers (`StandardScaler`, `OneHotEncoder`) are fit **strictly on `X_train`** inside a Scikit-learn `ColumnTransformer`.
+   - `X_test` is only transformed (`.transform()`, never `.fit()`), guaranteeing zero test-set distribution leakage.
+4. **Production Resiliency:** Categorical features use `OneHotEncoder(handle_unknown='ignore', sparse_output=False)` to prevent API crashes when novel values are encountered during live inference.
+
+---
+
+## 🏗️ 5. Planned Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -94,7 +120,7 @@ When loading the raw dataset, `TotalCharges` is parsed as an `object` (string) c
 
 ---
 
-## 🗂️ 5. Project Directory Structure
+## 🗂️ 6. Project Directory Structure
 
 ```text
 customer_churn_intelligence/
@@ -108,7 +134,7 @@ customer_churn_intelligence/
 │   └── processed/               # Cleaned data (telco_churn_cleaned.csv)
 │
 ├── notebooks/                   # Jupyter notebooks for interactive EDA
-│   └── .gitkeep
+│   └── 01_exploratory_data_analysis.ipynb   # Comprehensive executable EDA notebook
 │
 ├── src/                         # Modular, production-ready Python package
 │   ├── __init__.py              # Package marker & version definition
@@ -120,7 +146,9 @@ customer_churn_intelligence/
 │   │   ├── cleaner.py           # Documented cleaning rules (TotalCharges)
 │   │   └── pipeline.py          # Pipeline orchestrator & CLI
 │   ├── features/                # Preprocessing pipelines, encoders, scalers
-│   │   └── __init__.py
+│   │   ├── __init__.py          # Feature subpackage exports
+│   │   ├── config.py            # Column schema taxonomy and groupings
+│   │   └── pipeline.py          # ColumnTransformer, leak-free preprocessing
 │   ├── models/                  # Training scripts, hyperparameter tuning, metrics
 │   │   └── __init__.py
 │   ├── explainability/          # SHAP explainers & interpretation utilities
@@ -134,13 +162,15 @@ customer_churn_intelligence/
 ├── scripts/
 │   ├── download_data.py         # Standalone CLI for dataset download & provenance
 │   ├── run_data_pipeline.py     # Single-command entry point for the data pipeline
+│   ├── generate_eda_notebook.py # Programmatically compiles & executes the EDA notebook
 │   └── verify_environment.py    # Environment health check script
 │
 ├── tests/                       # Unit and integration test suite (pytest)
 │   ├── __init__.py
 │   ├── test_data_loader.py      # Loader tests (existence, non-empty, error modes)
 │   ├── test_data_validator.py   # Validator tests (schema, target, whitespace)
-│   ├── test_data_cleaner.py     # Cleaner tests (impute_zero, drop, trimming)
+│   ├── test_data_cleaner.py     # Cleaner tests (impute_zero, drop, regression tests)
+│   ├── test_features.py         # Feature engineering & leakage tests
 │   └── test_pipeline.py         # End-to-end integration tests
 │
 ├── backend/                     # (Phase 6) FastAPI backend service
@@ -149,14 +179,14 @@ customer_churn_intelligence/
 
 ---
 
-## 🗺️ 6. Learning & Implementation Roadmap
+## 🗺️ 7. Learning & Implementation Roadmap
 
 | Phase | Milestone | Core Concepts & Deliverables | Status |
 |---|---|---|---|
 | **Phase 1** | **Project Foundation & Environment Setup** | Virtual environment, directory structure, requirements, `.gitignore`, verification test. | ✅ Completed |
 | **Phase 2** | **Implement the Real Data Pipeline** | Verified dataset ingestion, schema validation, documented cleaning rules, automated tests, CLI entry points. | ✅ Completed |
-| **Phase 3** | **Exploratory Data Analysis (EDA) & Feature Engineering** | Distribution analysis, one-hot encoding, feature scaling, preventing data leakage. | ⏳ Next |
-| **Phase 4** | **Model Training, Evaluation & Benchmarking** | Baseline Logistic Regression, Random Forest, Gradient Boosting; Precision/Recall/ROC-AUC evaluation. | ⏳ Planned |
+| **Phase 3** | **Exploratory Data Analysis (EDA) & Feature Engineering** | Distribution analysis, one-hot encoding, feature scaling, preventing data leakage. | ✅ Completed |
+| **Phase 4** | **Model Training, Evaluation & Benchmarking** | Baseline Logistic Regression, Random Forest, Gradient Boosting; Precision/Recall/ROC-AUC evaluation. | ⏳ Next |
 | **Phase 5** | **Model Explainability with SHAP** | Global feature importance (summary plots) and local individual customer explanations (waterfall plots). | ⏳ Planned |
 | **Phase 6** | **FastAPI Backend Integration** | RESTful endpoints for single and batch predictions, request validation schemas, health checks. | ⏳ Planned |
 | **Phase 7** | **Interactive Web Dashboard** | Modern React + TypeScript UI for customer success teams to simulate retention strategies. | ⏳ Planned |
@@ -164,37 +194,20 @@ customer_churn_intelligence/
 
 ---
 
-## 🚀 7. Step-by-Step Execution Guide
+## 🚀 8. Execution Commands
 
-### Step 1: Activate Virtual Environment
-On Windows (PowerShell):
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-*(On macOS / Linux: `source .venv/bin/activate`)*
-
-### Step 2: Check Dataset Provenance & Metadata
-```powershell
-python scripts/download_data.py --info
-```
-
-### Step 3: Download Raw Dataset
-```powershell
-python scripts/download_data.py
-```
-*(Saved to `data/raw/Telco-Customer-Churn.csv` without modifying or mutating the raw source).*
-
-### Step 4: Run the Complete Data Pipeline (Single Command)
+### Run Data Pipeline
 ```powershell
 python scripts/run_data_pipeline.py
 ```
-Optional flags:
-- `--strategy impute_zero` *(default, sets TotalCharges=0.0 where tenure=0)*
-- `--strategy drop` *(drops the 11 blank TotalCharges rows)*
-- `--force-download` *(forces fresh download from upstream repository)*
 
-### Step 5: Run Automated Tests
+### Run EDA Notebook Generation & Verification
+```powershell
+python scripts/generate_eda_notebook.py
+```
+*(Or open [`notebooks/01_exploratory_data_analysis.ipynb`](file:///d:/@PROJECTS/ML/customer_churn_intelligence/notebooks/01_exploratory_data_analysis.ipynb) in Jupyter / VS Code / Antigravity IDE).*
+
+### Run Full Automated Test Suite (29 Tests)
 ```powershell
 pytest -v tests
 ```
-All 15 unit and integration tests validate loading, schema integrity, custom exceptions, cleaning logic, and pipeline execution.
