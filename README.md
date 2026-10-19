@@ -238,11 +238,37 @@ npm test
 
 ---
 
+## 🌐 Cloud Deployment Guide
+
+ChurnSight is pre-configured for cloud deployment with the FastAPI backend on **Render** and the React frontend on **Vercel**.
+
+### Backend Service (Render)
+1. Create a new **Web Service** connected to the repository.
+2. Configure the build and runtime settings:
+   - **Environment:** `Python 3` (aligned with `.python-version`: `3.10.14`)
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `uvicorn src.api.main:app --host 0.0.0.0 --port $PORT`
+3. Configure Environment Variables:
+   - `CORS_ORIGINS`: Must contain the exact deployed frontend origin (e.g. `https://churnsight.vercel.app`).
+
+### Frontend Dashboard (Vercel)
+1. Import the repository into Vercel.
+2. In Project Settings, configure the framework and directories:
+   - **Framework Preset:** `Vite`
+   - **Root Directory:** `frontend`
+   - **Build Command:** `npm run build`
+   - **Output Directory:** `dist`
+3. Configure Environment Variables:
+   - `VITE_API_BASE_URL`: Must be configured to the deployed backend URL without a trailing slash (e.g. `https://churnsight-api.onrender.com`).
+
+---
+
 ## 📁 Repository Directory Structure
 
 ```text
 customer_churn_intelligence/
 ├── .gitignore                           # Git ignore rules for venv, data dumps, and caches
+├── .python-version                      # Pinned Python 3.10.14 runtime for deployment
 ├── .env.example                         # Safe configuration template
 ├── pytest.ini                           # Pytest configuration & warning filters
 ├── requirements.txt                     # Pinned core Python dependencies
