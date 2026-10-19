@@ -5,15 +5,13 @@ Computes comprehensive classification metrics tailored for imbalanced churn pred
 - ROC-AUC (Discrimination ability across continuous probability thresholds)
 - PR-AUC (Average Precision, highly sensitive to minority class performance)
 - Confusion Matrix (Explicitly ordered: True Negatives, False Positives, False Negatives, True Positives)
-- Probability Threshold Trade-Off Analysis
+- Probability Threshold Trade-Off Analysis (confined to training/validation out-of-fold data)
 
-Business Context & Metric Framing:
-- False Positive (FP): A loyal customer mistakenly predicted to churn.
-  Business Impact: Wasted proactive discount or retention outreach cost, but the customer is retained.
-- False Negative (FN): A customer predicted to stay who cancels service.
-  Business Impact: Significant lost recurring revenue and Customer Lifetime Value (LTV).
-  (Ref: Gallo, Amy. "The Value of Keeping the Right Customers", Harvard Business Review, 2014).
-  Therefore, Recall on the churn class is typically prioritized over raw Accuracy.
+Input Validation Guarantees:
+- Rejects non-finite values (NaN, +Inf, -Inf) across labels, predictions, and probabilities via np.isfinite().
+- Validates that y_true and y_pred contain strictly binary values {0, 1}.
+- Validates that predicted probabilities are within [0.0, 1.0].
+- Enforces strict length matching and dimensional conformance.
 """
 
 from dataclasses import asdict, dataclass, field
@@ -54,8 +52,11 @@ class EvaluationMetrics:
     threshold_tradeoffs: List[Dict[str, float]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert metrics dataclass to dictionary."""
-        return asdict(self)
+        """Convert metrics dataclass to dictionary, omitting empty threshold sweeps."""
+        data = asdict(self)
+        if not data["threshold_tradeoffs"]:
+            del data["threshold_tradeoffs"]
+        return data
 
     def summary_text(self) -> str:
         """Format metrics into a clear diagnostic report."""
@@ -80,22 +81,25 @@ def evaluate_predictions(
     y_prob: Optional[Union[pd.Series, np.ndarray]] = None,
     model_name: str = "Classifier",
     raise_on_single_class: bool = True,
+    compute_threshold_tradeoffs: bool = False,
 ) -> EvaluationMetrics:
     """Calculate comprehensive evaluation metrics on predictions and probabilities.
 
     Parameters
     ----------
     y_true : Union[pd.Series, np.ndarray]
-        Ground-truth binary labels (0 or 1).
+        Ground-truth binary labels (must contain strictly 0 and 1).
     y_pred : Union[pd.Series, np.ndarray]
-        Discrete predicted binary labels (0 or 1).
+        Discrete predicted binary labels (must contain strictly 0 and 1).
     y_prob : Optional[Union[pd.Series, np.ndarray]], default None
         Predicted churn probabilities P(y=1|X).
     model_name : str, default 'Classifier'
         Label identifying the evaluated model.
     raise_on_single_class : bool, default True
-        If True, raises ValueError when y_true contains fewer than 2 classes,
-        preventing misleading fallback numbers.
+        If True, raises ValueError when y_true contains fewer than 2 classes.
+    compute_threshold_tradeoffs : bool, default False
+        If True, evaluates a threshold-sweep table. Kept False for final holdout
+        evaluation to prevent holdout threshold leakage.
 
     Returns
     -------
@@ -105,17 +109,42 @@ def evaluate_predictions(
     Raises
     ------
     ValueError
-        If array lengths mismatch, values are out of bounds, or y_true is single-class.
+        If inputs contain non-finite numbers (NaN, Inf), invalid labels/predictions,
+        out-of-bounds probabilities, or array dimension mismatches.
     """
-    y_true_arr = np.asarray(y_true).astype(int)
-    y_pred_arr = np.asarray(y_pred).astype(int)
+    y_true_arr = np.asarray(y_true)
+    y_pred_arr = np.asarray(y_pred)
 
+    # 1. Non-finite checks
+    if not np.all(np.isfinite(y_true_arr)):
+        raise ValueError("y_true contains non-finite values (NaN, +Inf, or -Inf).")
+    if not np.all(np.isfinite(y_pred_arr)):
+        raise ValueError("y_pred contains non-finite values (NaN, +Inf, or -Inf).")
+
+    # 2. Length conformance
     if len(y_true_arr) != len(y_pred_arr):
         raise ValueError(
             f"Length mismatch: len(y_true)={len(y_true_arr)} != len(y_pred)={len(y_pred_arr)}"
         )
 
-    unique_classes = np.unique(y_true_arr)
+    # 3. Binary label validation (strictly 0 and 1)
+    unique_true = set(np.unique(y_true_arr))
+    if not unique_true.issubset({0, 1, 0.0, 1.0, False, True}):
+        raise ValueError(
+            f"y_true must contain strictly binary labels in {{0, 1}}. Found: {unique_true}"
+        )
+
+    unique_pred = set(np.unique(y_pred_arr))
+    if not unique_pred.issubset({0, 1, 0.0, 1.0, False, True}):
+        raise ValueError(
+            f"y_pred must contain strictly binary predictions in {{0, 1}}. Found: {unique_pred}"
+        )
+
+    y_true_int = y_true_arr.astype(int)
+    y_pred_int = y_pred_arr.astype(int)
+
+    # 4. Check for degenerate single-class evaluation slices
+    unique_classes = np.unique(y_true_int)
     if len(unique_classes) < 2:
         msg = (
             f"ROC-AUC and binary evaluation metrics are mathematically undefined when y_true "
@@ -125,21 +154,24 @@ def evaluate_predictions(
             raise ValueError(msg)
         logger.warning(msg)
 
-    # Core classification metrics
-    acc = float(accuracy_score(y_true_arr, y_pred_arr))
-    prec = float(precision_score(y_true_arr, y_pred_arr, zero_division=0))
-    rec = float(recall_score(y_true_arr, y_pred_arr, zero_division=0))
-    f1 = float(f1_score(y_true_arr, y_pred_arr, zero_division=0))
+    # 5. Core classification metrics
+    acc = float(accuracy_score(y_true_int, y_pred_int))
+    prec = float(precision_score(y_true_int, y_pred_int, zero_division=0))
+    rec = float(recall_score(y_true_int, y_pred_int, zero_division=0))
+    f1 = float(f1_score(y_true_int, y_pred_int, zero_division=0))
 
-    # Explicit confusion matrix unpacking: labels=[0, 1] guarantees [[TN, FP], [FN, TP]]
-    cm = confusion_matrix(y_true_arr, y_pred_arr, labels=[0, 1])
+    # 6. Explicit confusion matrix unpacking: labels=[0, 1] guarantees [[TN, FP], [FN, TP]]
+    cm = confusion_matrix(y_true_int, y_pred_int, labels=[0, 1])
     tn, fp, fn, tp = cm.ravel()
 
-    # Probability metrics
+    # 7. Probability metrics
     threshold_table: List[Dict[str, float]] = []
 
     if y_prob is not None:
         y_prob_arr = np.asarray(y_prob, dtype=float)
+
+        if not np.all(np.isfinite(y_prob_arr)):
+            raise ValueError("y_prob contains non-finite values (NaN, +Inf, or -Inf).")
 
         # Validate probability array shape
         if y_prob_arr.ndim == 2:
@@ -153,26 +185,27 @@ def evaluate_predictions(
                 f"Predicted probabilities must be 1D or 2D array, got shape {y_prob_arr.shape}"
             )
 
-        if len(y_prob_arr) != len(y_true_arr):
+        if len(y_prob_arr) != len(y_true_int):
             raise ValueError(
-                f"Length mismatch between y_true ({len(y_true_arr)}) and y_prob ({len(y_prob_arr)})"
+                f"Length mismatch between y_true ({len(y_true_int)}) and y_prob ({len(y_prob_arr)})"
             )
 
         if (y_prob_arr < 0.0).any() or (y_prob_arr > 1.0).any():
             raise ValueError("Predicted probabilities must be strictly bounded in [0.0, 1.0].")
 
         if len(unique_classes) >= 2:
-            roc_auc = float(roc_auc_score(y_true_arr, y_prob_arr))
-            pr_auc = float(average_precision_score(y_true_arr, y_prob_arr))
-            threshold_table = evaluate_threshold_tradeoffs(y_true_arr, y_prob_arr)
+            roc_auc = float(roc_auc_score(y_true_int, y_prob_arr))
+            pr_auc = float(average_precision_score(y_true_int, y_prob_arr))
+            if compute_threshold_tradeoffs:
+                threshold_table = evaluate_threshold_tradeoffs(y_true_int, y_prob_arr)
         else:
             roc_auc = float("nan")
             pr_auc = float("nan")
     else:
         # Fallback to discrete predictions only if probabilities are not provided
         if len(unique_classes) >= 2:
-            roc_auc = float(roc_auc_score(y_true_arr, y_pred_arr))
-            pr_auc = float(average_precision_score(y_true_arr, y_pred_arr))
+            roc_auc = float(roc_auc_score(y_true_int, y_pred_int))
+            pr_auc = float(average_precision_score(y_true_int, y_pred_int))
         else:
             roc_auc = float("nan")
             pr_auc = float("nan")
@@ -198,7 +231,7 @@ def evaluate_threshold_tradeoffs(
     y_prob: Union[pd.Series, np.ndarray],
     thresholds: Optional[Sequence[float]] = None,
 ) -> List[Dict[str, float]]:
-    """Evaluate Precision, Recall, and F1 across multiple probability decision thresholds.
+    """Evaluate Precision, Recall, and F1 across decision thresholds on validation or OOF data.
 
     Parameters
     ----------
@@ -213,22 +246,49 @@ def evaluate_threshold_tradeoffs(
     -------
     List[Dict[str, float]]
         Table of metrics for each threshold.
+
+    Raises
+    ------
+    ValueError
+        If inputs contain non-finite numbers or values outside valid domains.
     """
     if thresholds is None:
         thresholds = [round(x, 2) for x in np.arange(0.10, 0.95, 0.05)]
 
-    y_true_arr = np.asarray(y_true).astype(int)
+    y_true_arr = np.asarray(y_true)
     y_prob_arr = np.asarray(y_prob, dtype=float)
-    if y_prob_arr.ndim == 2:
-        y_prob_arr = y_prob_arr[:, 1]
 
+    if not np.all(np.isfinite(y_true_arr)):
+        raise ValueError("y_true contains non-finite values.")
+    if not np.all(np.isfinite(y_prob_arr)):
+        raise ValueError("y_prob contains non-finite values (NaN, +Inf, or -Inf).")
+
+    unique_true = set(np.unique(y_true_arr))
+    if not unique_true.issubset({0, 1, 0.0, 1.0, False, True}):
+        raise ValueError(f"y_true must contain strictly binary labels in {{0, 1}}. Found: {unique_true}")
+
+    if y_prob_arr.ndim == 2:
+        if y_prob_arr.shape[1] != 2:
+            raise ValueError(f"Expected shape (N, 2), got {y_prob_arr.shape}")
+        y_prob_arr = y_prob_arr[:, 1]
+    elif y_prob_arr.ndim != 1:
+        raise ValueError(f"Expected 1D or 2D probability array, got shape {y_prob_arr.shape}")
+
+    if len(y_true_arr) != len(y_prob_arr):
+        raise ValueError(f"Length mismatch: len(y_true)={len(y_true_arr)} != len(y_prob)={len(y_prob_arr)}")
+
+    if (y_prob_arr < 0.0).any() or (y_prob_arr > 1.0).any():
+        raise ValueError("Probabilities must be in [0.0, 1.0].")
+
+    y_true_int = y_true_arr.astype(int)
     results: List[Dict[str, float]] = []
+
     for th in thresholds:
         preds = (y_prob_arr >= th).astype(int)
-        tn, fp, fn, tp = confusion_matrix(y_true_arr, preds, labels=[0, 1]).ravel()
-        prec = precision_score(y_true_arr, preds, zero_division=0)
-        rec = recall_score(y_true_arr, preds, zero_division=0)
-        f1 = f1_score(y_true_arr, preds, zero_division=0)
+        tn, fp, fn, tp = confusion_matrix(y_true_int, preds, labels=[0, 1]).ravel()
+        prec = precision_score(y_true_int, preds, zero_division=0)
+        rec = recall_score(y_true_int, preds, zero_division=0)
+        f1 = f1_score(y_true_int, preds, zero_division=0)
 
         results.append({
             "threshold": round(float(th), 2),
@@ -284,7 +344,7 @@ def select_optimal_threshold(
 def format_benchmark_table(metrics_list: List[EvaluationMetrics]) -> str:
     """Format multiple model evaluation results into an ASCII comparison table."""
     header = (
-        f"{'Model Name':<32} | {'ROC-AUC':<8} | {'PR-AUC':<8} | {'Recall':<8} | {'Prec':<8} | {'F1':<8} | {'Acc':<8}"
+        f"{'Model Name':<40} | {'ROC-AUC':<8} | {'PR-AUC':<8} | {'Recall':<8} | {'Prec':<8} | {'F1':<8} | {'Acc':<8}"
     )
     separator = "-" * len(header)
     rows = [separator, header, separator]
@@ -293,7 +353,7 @@ def format_benchmark_table(metrics_list: List[EvaluationMetrics]) -> str:
         roc_str = f"{m.roc_auc:<8.4f}" if not math.isnan(m.roc_auc) else "NaN     "
         pr_str = f"{m.pr_auc:<8.4f}" if not math.isnan(m.pr_auc) else "NaN     "
         row = (
-            f"{m.model_name:<32} | "
+            f"{m.model_name:<40} | "
             f"{roc_str} | "
             f"{pr_str} | "
             f"{m.recall:<8.4f} | "

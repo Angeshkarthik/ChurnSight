@@ -3,9 +3,10 @@
 Covers:
 - CV-based champion selection with deterministic tie-breaking (no test-set peeking)
 - OOF-based threshold optimization (independent of holdout labels)
+- Final holdout isolation (no candidate models or holdout threshold sweeps)
 - Explicit confusion matrix label ordering (TN, FP, FN, TP)
 - Positive-class metric calculations (Precision, Recall, F1 for Churn)
-- Defensive input validation and undefined single-class metric handling
+- Defensive input validation (rejection of NaN, +Inf, -Inf, invalid labels, invalid predictions)
 """
 
 import math
@@ -187,9 +188,55 @@ def test_evaluate_predictions_invalid_probabilities():
     """Verify probabilities outside [0, 1] raise ValueError."""
     y_true = np.array([0, 1, 0])
     y_pred = np.array([0, 1, 0])
-    y_prob = np.array([0.2, 1.5, -0.1])  # Invalid probabilities
+    y_prob = np.array([0.2, 1.5, -0.1])  # Out-of-bounds probabilities
     with pytest.raises(ValueError, match="strictly bounded in \\[0.0, 1.0\\]"):
         evaluate_predictions(y_true, y_pred, y_prob)
+
+
+def test_evaluate_predictions_non_finite_probabilities():
+    """Verify NaN, +Inf, and -Inf in probabilities are rejected via np.isfinite()."""
+    y_true = np.array([0, 1, 0])
+    y_pred = np.array([0, 1, 0])
+
+    # NaN probability
+    with pytest.raises(ValueError, match="non-finite values"):
+        evaluate_predictions(y_true, y_pred, np.array([0.2, np.nan, 0.1]))
+
+    # +Inf probability
+    with pytest.raises(ValueError, match="non-finite values"):
+        evaluate_predictions(y_true, y_pred, np.array([0.2, np.inf, 0.1]))
+
+    # -Inf probability
+    with pytest.raises(ValueError, match="non-finite values"):
+        evaluate_predictions(y_true, y_pred, np.array([0.2, -np.inf, 0.1]))
+
+
+def test_evaluate_predictions_non_finite_labels_and_preds():
+    """Verify NaN and Inf in labels or predictions are rejected."""
+    # NaN in y_true
+    with pytest.raises(ValueError, match="y_true contains non-finite"):
+        evaluate_predictions(np.array([0, np.nan, 1]), np.array([0, 1, 1]))
+
+    # Inf in y_pred
+    with pytest.raises(ValueError, match="y_pred contains non-finite"):
+        evaluate_predictions(np.array([0, 1, 0]), np.array([0, np.inf, 0]))
+
+
+def test_evaluate_predictions_invalid_labels():
+    """Verify non-binary labels raise ValueError."""
+    # Labels containing 2
+    with pytest.raises(ValueError, match="strictly binary labels in {0, 1}"):
+        evaluate_predictions(np.array([0, 1, 2]), np.array([0, 1, 0]))
+
+    # Negative labels
+    with pytest.raises(ValueError, match="strictly binary labels in {0, 1}"):
+        evaluate_predictions(np.array([-1, 1, 0]), np.array([0, 1, 0]))
+
+
+def test_evaluate_predictions_invalid_predictions():
+    """Verify non-binary predictions raise ValueError."""
+    with pytest.raises(ValueError, match="strictly binary predictions in {0, 1}"):
+        evaluate_predictions(np.array([0, 1, 0]), np.array([0, 1, 5]))
 
 
 def test_evaluate_predictions_single_class_target_raises_error():
@@ -205,6 +252,18 @@ def test_evaluate_predictions_single_class_target_raises_error():
     metrics = evaluate_predictions(y_true_all_zeros, y_pred, y_prob, raise_on_single_class=False)
     assert math.isnan(metrics.roc_auc)
     assert math.isnan(metrics.pr_auc)
+
+
+def test_holdout_isolation_no_sweep_tables():
+    """Verify that when compute_threshold_tradeoffs is False, no threshold sweeps are calculated."""
+    y_true = np.array([0, 1, 0, 1])
+    y_pred = np.array([0, 1, 0, 1])
+    y_prob = np.array([0.1, 0.8, 0.2, 0.9])
+
+    metrics = evaluate_predictions(y_true, y_pred, y_prob, compute_threshold_tradeoffs=False)
+    assert metrics.threshold_tradeoffs == []
+    # to_dict() should omit the empty threshold_tradeoffs key
+    assert "threshold_tradeoffs" not in metrics.to_dict()
 
 
 def test_format_benchmark_table_with_nans():

@@ -1,0 +1,249 @@
+{
+  "model_name": "Gradient Boosting",
+  "trained_at_utc": "2026-10-18T10:09:50.306068+00:00",
+  "selection_methodology": {
+    "champion_selection": "5-Fold Stratified CV on Development set using CV PR-AUC Mean with deterministic tie-breaking",
+    "threshold_selection": "Out-Of-Fold (OOF) cross-validation predictions on Development set maximizing F1-score",
+    "holdout_evaluation": "Independent fresh holdout partition, evaluated strictly on frozen champion model (no holdout sweep tables)"
+  },
+  "seeds": {
+    "holdout_seed": 100,
+    "cv_split_seed": 42
+  },
+  "sample_counts": {
+    "development_samples": 5634,
+    "holdout_samples": 1409,
+    "total_samples": 7043
+  },
+  "operational_threshold": 0.35,
+  "oof_threshold_metrics": {
+    "threshold": 0.35,
+    "precision": 0.5756,
+    "recall": 0.7003,
+    "f1_score": 0.6319,
+    "tp": 1047,
+    "fp": 772,
+    "fn": 448,
+    "tn": 3367
+  },
+  "oof_threshold_tradeoffs": [
+    {
+      "threshold": 0.1,
+      "precision": 0.4092,
+      "recall": 0.9391,
+      "f1_score": 0.57,
+      "tp": 1404,
+      "fp": 2027,
+      "fn": 91,
+      "tn": 2112
+    },
+    {
+      "threshold": 0.15,
+      "precision": 0.4514,
+      "recall": 0.8916,
+      "f1_score": 0.5994,
+      "tp": 1333,
+      "fp": 1620,
+      "fn": 162,
+      "tn": 2519
+    },
+    {
+      "threshold": 0.2,
+      "precision": 0.4886,
+      "recall": 0.8441,
+      "f1_score": 0.6189,
+      "tp": 1262,
+      "fp": 1321,
+      "fn": 233,
+      "tn": 2818
+    },
+    {
+      "threshold": 0.25,
+      "precision": 0.5161,
+      "recall": 0.7926,
+      "f1_score": 0.6252,
+      "tp": 1185,
+      "fp": 1111,
+      "fn": 310,
+      "tn": 3028
+    },
+    {
+      "threshold": 0.3,
+      "precision": 0.5452,
+      "recall": 0.7418,
+      "f1_score": 0.6285,
+      "tp": 1109,
+      "fp": 925,
+      "fn": 386,
+      "tn": 3214
+    },
+    {
+      "threshold": 0.35,
+      "precision": 0.5756,
+      "recall": 0.7003,
+      "f1_score": 0.6319,
+      "tp": 1047,
+      "fp": 772,
+      "fn": 448,
+      "tn": 3367
+    },
+    {
+      "threshold": 0.4,
+      "precision": 0.6106,
+      "recall": 0.6462,
+      "f1_score": 0.6279,
+      "tp": 966,
+      "fp": 616,
+      "fn": 529,
+      "tn": 3523
+    },
+    {
+      "threshold": 0.45,
+      "precision": 0.6352,
+      "recall": 0.5846,
+      "f1_score": 0.6088,
+      "tp": 874,
+      "fp": 502,
+      "fn": 621,
+      "tn": 3637
+    },
+    {
+      "threshold": 0.5,
+      "precision": 0.6619,
+      "recall": 0.5211,
+      "f1_score": 0.5831,
+      "tp": 779,
+      "fp": 398,
+      "fn": 716,
+      "tn": 3741
+    },
+    {
+      "threshold": 0.55,
+      "precision": 0.6986,
+      "recall": 0.4635,
+      "f1_score": 0.5573,
+      "tp": 693,
+      "fp": 299,
+      "fn": 802,
+      "tn": 3840
+    },
+    {
+      "threshold": 0.6,
+      "precision": 0.7321,
+      "recall": 0.404,
+      "f1_score": 0.5207,
+      "tp": 604,
+      "fp": 221,
+      "fn": 891,
+      "tn": 3918
+    },
+    {
+      "threshold": 0.65,
+      "precision": 0.7566,
+      "recall": 0.3244,
+      "f1_score": 0.4541,
+      "tp": 485,
+      "fp": 156,
+      "fn": 1010,
+      "tn": 3983
+    },
+    {
+      "threshold": 0.7,
+      "precision": 0.8133,
+      "recall": 0.2622,
+      "f1_score": 0.3966,
+      "tp": 392,
+      "fp": 90,
+      "fn": 1103,
+      "tn": 4049
+    },
+    {
+      "threshold": 0.75,
+      "precision": 0.8291,
+      "recall": 0.198,
+      "f1_score": 0.3197,
+      "tp": 296,
+      "fp": 61,
+      "fn": 1199,
+      "tn": 4078
+    },
+    {
+      "threshold": 0.8,
+      "precision": 0.8578,
+      "recall": 0.1291,
+      "f1_score": 0.2244,
+      "tp": 193,
+      "fp": 32,
+      "fn": 1302,
+      "tn": 4107
+    },
+    {
+      "threshold": 0.85,
+      "precision": 0.8558,
+      "recall": 0.0595,
+      "f1_score": 0.1113,
+      "tp": 89,
+      "fp": 15,
+      "fn": 1406,
+      "tn": 4124
+    },
+    {
+      "threshold": 0.9,
+      "precision": 0.8929,
+      "recall": 0.0167,
+      "f1_score": 0.0328,
+      "tp": 25,
+      "fp": 3,
+      "fn": 1470,
+      "tn": 4136
+    }
+  ],
+  "holdout_operational_metrics": {
+    "model_name": "Gradient Boosting (Th=0.35 Operational)",
+    "accuracy": 0.7750177430801988,
+    "precision": 0.559748427672956,
+    "recall": 0.713903743315508,
+    "f1_score": 0.627497062279671,
+    "roc_auc": 0.8412617220801365,
+    "pr_auc": 0.6446545013891662,
+    "true_negatives": 825,
+    "false_positives": 210,
+    "false_negatives": 107,
+    "true_positives": 267
+  },
+  "holdout_standard_metrics": {
+    "model_name": "Gradient Boosting (Th=0.50 Standard)",
+    "accuracy": 0.7991483321504613,
+    "precision": 0.6444444444444445,
+    "recall": 0.5427807486631016,
+    "f1_score": 0.5892597968069666,
+    "roc_auc": 0.8412617220801365,
+    "pr_auc": 0.6446545013891662,
+    "true_negatives": 923,
+    "false_positives": 112,
+    "false_negatives": 171,
+    "true_positives": 203
+  },
+  "feature_names_in": [
+    "gender",
+    "SeniorCitizen",
+    "Partner",
+    "Dependents",
+    "tenure",
+    "PhoneService",
+    "MultipleLines",
+    "InternetService",
+    "OnlineSecurity",
+    "OnlineBackup",
+    "DeviceProtection",
+    "TechSupport",
+    "StreamingTV",
+    "StreamingMovies",
+    "Contract",
+    "PaperlessBilling",
+    "PaymentMethod",
+    "MonthlyCharges",
+    "TotalCharges"
+  ],
+  "total_raw_features": 19
+}

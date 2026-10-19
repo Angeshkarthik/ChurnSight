@@ -13,19 +13,32 @@ __pycache__/
 # Jupyter Notebook Checkpoints
 .ipynb_checkpoints/
 
-# Environment Variables & Secrets
+# Environment Variables & Local Configuration
 .env
 *.env
+.env.*
+!.env.example
 
-# Data Files (Keep directory structure via .gitkeep, ignore data dumps)
+# Frontend Dependencies & Build Output
+node_modules/
+dist/
+dist-ssr/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+*.local
+
+# Data Files (Keep directory structure via .gitkeep, ignore raw & processed dumps)
 data/raw/*
 !data/raw/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
 
-# Serialized Model Artifacts (Binaries shouldn't be tracked in Git)
+# Serialized Model Artifacts (Ignore arbitrary model dumps; track champion pipeline & metadata)
 models/*
 !models/.gitkeep
+!models/churn_model.joblib
+!models/model_metadata.json
 
 # Testing & Coverage
 .pytest_cache/

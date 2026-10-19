@@ -5,12 +5,13 @@ Orchestrates the complete Phase 4 modeling workflow adhering to strict ML govern
    using documented, explicit random seeds.
 2. Evaluates all candidate pipelines using 5-Fold Stratified Cross-Validation strictly on Development data.
 3. Selects the champion model strictly using mean CV PR-AUC with deterministic tie-breaking.
-   (No test data is inspected during model selection).
+   (No holdout data is inspected or touched during model selection).
 4. Selects the operational probability decision threshold strictly using training Out-Of-Fold (OOF)
    predictions to maximize OOF F1-score.
 5. Freezes the champion pipeline and operational threshold.
-6. Refits the champion model on the full Development set and performs a single, independent evaluation
-   on the fresh untouched Holdout set at both standard (0.50) and operational thresholds.
+6. Refits ONLY the frozen champion model on the full Development set and evaluates it on the fresh holdout
+   at the preselected operational threshold (and standard 0.50 for comparison).
+   (No candidate models or holdout threshold sweeps are evaluated on holdout data).
 7. Serializes the winning end-to-end Pipeline artifact (.joblib) and governance metadata (.json).
 """
 
@@ -68,7 +69,6 @@ class BenchmarkResult:
     oof_threshold_tradeoffs: List[Dict[str, float]]
     holdout_standard_metrics: EvaluationMetrics
     holdout_operational_metrics: EvaluationMetrics
-    all_models_holdout_metrics: List[EvaluationMetrics]
     artifact_path: Optional[Path]
     metadata_path: Optional[Path]
 
@@ -262,14 +262,14 @@ def run_model_benchmarking(
     export_artifacts: bool = True,
     verbose: bool = True,
 ) -> BenchmarkResult:
-    """Execute rigorous model training, validation-based selection, and independent holdout evaluation.
+    """Execute rigorous model training, validation-based selection, and isolated holdout evaluation.
 
     Governance Safeguards:
-    1. Data Partitioning: Independent holdout split using holdout_seed (default 100),
-       completely un-peeked during model and threshold selection.
-    2. Champion Selection: Strictly determined via 5-Fold Stratified CV on Development data.
-    3. Threshold Tuning: Operational threshold selected strictly from Out-Of-Fold (OOF) training predictions.
-    4. Freezing: Model architecture and threshold are frozen prior to final holdout inference.
+    1. Independent Holdout: Fresh holdout partition established using holdout_seed (100).
+    2. Champion Selection: Strictly via 5-Fold Stratified CV on Development data.
+    3. Threshold Tuning: Confined strictly to Out-Of-Fold (OOF) Development predictions.
+    4. Holdout Isolation: Only the frozen champion model is evaluated on the final holdout.
+       No candidate models and no threshold-sweep tables are computed against holdout data.
 
     Parameters
     ----------
@@ -350,53 +350,45 @@ def run_model_benchmarking(
         print(f"  F1: {oof_thresh_metrics['f1_score']:.4f} | Recall: {oof_thresh_metrics['recall']:.4f} | Precision: {oof_thresh_metrics['precision']:.4f}")
         print("=" * 90 + "\n")
 
-    # 6. Step 3: Refit candidate models on full Development set and evaluate on Fresh Holdout
-    # We fit all candidate pipelines on Development data
-    all_holdout_metrics: List[EvaluationMetrics] = []
-    fitted_pipelines: Dict[str, Pipeline] = {}
+    # 6. Step 3: Refit ONLY the frozen champion model on Development data and evaluate on Fresh Holdout
+    champion_pipeline = get_all_candidate_models(random_state=cv_seed)[champion_name]
+    logger.info("Refitting frozen champion pipeline '%s' on full Development set...", champion_name)
+    champion_pipeline.fit(X_dev, y_dev)
 
-    for name, pipeline in candidate_models.items():
-        pipeline.fit(X_dev, y_dev)
-        fitted_pipelines[name] = pipeline
-
-        y_pred = pipeline.predict(X_holdout)
-        y_prob = None
-        if hasattr(pipeline, "predict_proba"):
-            try:
-                y_prob = pipeline.predict_proba(X_holdout)[:, 1]
-            except Exception:
-                y_prob = None
-
-        metrics = evaluate_predictions(y_holdout, y_pred, y_prob, model_name=name)
-        all_holdout_metrics.append(metrics)
-
-    # 7. Evaluate the frozen champion model at both standard (0.50) and operational thresholds
-    champion_pipeline = fitted_pipelines[champion_name]
+    # Generate probabilities for the held-out test partition
     holdout_prob = champion_pipeline.predict_proba(X_holdout)[:, 1]
 
-    # Standard threshold 0.50
+    # Evaluate at Standard threshold 0.50 (compute_threshold_tradeoffs=False guarantees NO holdout sweep tables)
     holdout_pred_standard = (holdout_prob >= 0.50).astype(int)
     holdout_standard_metrics = evaluate_predictions(
-        y_holdout, holdout_pred_standard, holdout_prob, model_name=f"{champion_name} (Th=0.50 Standard)"
+        y_holdout,
+        holdout_pred_standard,
+        holdout_prob,
+        model_name=f"{champion_name} (Th=0.50 Standard)",
+        compute_threshold_tradeoffs=False,
     )
 
-    # Frozen operational threshold
+    # Evaluate at Preselected Operational threshold
     holdout_pred_operational = (holdout_prob >= selected_threshold).astype(int)
     holdout_operational_metrics = evaluate_predictions(
-        y_holdout, holdout_pred_operational, holdout_prob, model_name=f"{champion_name} (Th={selected_threshold:.2f} Operational)"
+        y_holdout,
+        holdout_pred_operational,
+        holdout_prob,
+        model_name=f"{champion_name} (Th={selected_threshold:.2f} Operational)",
+        compute_threshold_tradeoffs=False,
     )
 
     if verbose:
         print("=" * 90)
         print("INDEPENDENT FINAL EVALUATION: FRESH HOLDOUT (N=%d samples, holdout_seed=%d)" % (len(X_holdout), holdout_seed))
         print("=" * 90)
-        print(format_benchmark_table([holdout_standard_metrics, holdout_operational_metrics] + [m for m in all_holdout_metrics if m.model_name != champion_name]))
+        print(format_benchmark_table([holdout_standard_metrics, holdout_operational_metrics]))
         print("=" * 90 + "\n")
         print("CHAMPION MODEL HOLDOUT REPORT (OPERATIONAL THRESHOLD):")
         print(holdout_operational_metrics.summary_text())
         print()
 
-    # 8. Export artifacts
+    # 7. Export artifacts
     artifact_path: Optional[Path] = None
     metadata_path: Optional[Path] = None
 
@@ -408,13 +400,14 @@ def run_model_benchmarking(
         logger.info("Serializing frozen champion pipeline to %s...", artifact_path)
         joblib.dump(champion_pipeline, artifact_path)
 
+        # Build clean metadata: OOF threshold tradeoffs are preserved; holdout threshold sweeps are excluded.
         metadata = {
             "model_name": champion_name,
             "trained_at_utc": datetime.now(timezone.utc).isoformat(),
             "selection_methodology": {
                 "champion_selection": "5-Fold Stratified CV on Development set using CV PR-AUC Mean with deterministic tie-breaking",
                 "threshold_selection": "Out-Of-Fold (OOF) cross-validation predictions on Development set maximizing F1-score",
-                "holdout_evaluation": "Independent fresh holdout partition, evaluated strictly after freezing model and threshold",
+                "holdout_evaluation": "Independent fresh holdout partition, evaluated strictly on frozen champion model (no holdout sweep tables)",
             },
             "seeds": {
                 "holdout_seed": holdout_seed,
@@ -427,9 +420,9 @@ def run_model_benchmarking(
             },
             "operational_threshold": selected_threshold,
             "oof_threshold_metrics": oof_thresh_metrics,
+            "oof_threshold_tradeoffs": oof_tradeoffs,
             "holdout_operational_metrics": holdout_operational_metrics.to_dict(),
             "holdout_standard_metrics": holdout_standard_metrics.to_dict(),
-            "oof_threshold_tradeoffs": oof_tradeoffs,
             "feature_names_in": list(X.columns),
             "total_raw_features": len(X.columns),
         }
@@ -448,7 +441,6 @@ def run_model_benchmarking(
         oof_threshold_tradeoffs=oof_tradeoffs,
         holdout_standard_metrics=holdout_standard_metrics,
         holdout_operational_metrics=holdout_operational_metrics,
-        all_models_holdout_metrics=all_holdout_metrics,
         artifact_path=artifact_path,
         metadata_path=metadata_path,
     )
