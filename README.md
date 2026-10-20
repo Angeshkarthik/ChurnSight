@@ -1,5 +1,9 @@
 # 👁️ ChurnSight — See risk. Understand why.
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-churn--sight--x5mt.vercel.app-10B981?style=for-the-badge&logo=vercel&logoColor=white)](https://churn-sight-x5mt.vercel.app/)
+[![API Documentation](https://img.shields.io/badge/API%20Documentation-FastAPI%20Swagger-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://churnsight-3g0u.onrender.com/docs)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Angeshkarthik/ChurnSight)
+
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![React 19](https://img.shields.io/badge/frontend-React%2019%20+%20TypeScript-61dafb.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/backend-FastAPI%20REST-009688.svg)](https://fastapi.tiangolo.com/)
@@ -7,9 +11,14 @@
 [![Test Suite](https://img.shields.io/badge/tests-91%20passed%20(82%20py%20+%209%20ts)-brightgreen.svg)](#-automated-testing)
 [![Champion Model](https://img.shields.io/badge/champion-Gradient%20Boosting%20(Holdout%20ROC--AUC%200.841)-blueviolet.svg)](#-model-benchmarking--rigorous-evaluation)
 
+- 🚀 **Live Demo:** [https://churn-sight-x5mt.vercel.app](https://churn-sight-x5mt.vercel.app/)
+- 📖 **Interactive API Documentation (Swagger UI):** [https://churnsight-3g0u.onrender.com/docs](https://churnsight-3g0u.onrender.com/docs)
+- 🩺 **Backend Health Endpoint:** [https://churnsight-3g0u.onrender.com/health](https://churnsight-3g0u.onrender.com/health)
+- 🐙 **Source Repository:** [https://github.com/Angeshkarthik/ChurnSight](https://github.com/Angeshkarthik/ChurnSight)
+
 **ChurnSight** is an end-to-end Machine Learning and Full-Stack Customer Intelligence platform designed to predict customer churn risk, explain individual predictions using Explainable AI (SHAP), and empower retention teams to take targeted, data-backed proactive actions.
 
-> **Note on Project Scope:** This is a portfolio demonstration project built with production-grade engineering principles and trained on the industry-standard IBM Telco Customer Churn dataset. It demonstrates how to properly design, benchmark, serve, and explain machine learning models—it is not currently deployed to production or claiming enterprise validation.
+> **Note on Project Scope:** ChurnSight is publicly deployed as a portfolio demonstration, not an enterprise-validated production service. It is built with production-grade engineering principles and trained on the industry-standard IBM Telco Customer Churn dataset to demonstrate how to properly design, benchmark, serve, and explain machine learning models in a modern full-stack environment.
 
 ---
 
@@ -168,8 +177,8 @@ Where:
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/<your-username>/churnsight.git
-cd churnsight
+git clone https://github.com/Angeshkarthik/ChurnSight.git
+cd ChurnSight
 ```
 
 ### 2. Environment Setup (Python 3.10+)
@@ -240,26 +249,33 @@ npm test
 
 ## 🌐 Cloud Deployment Guide
 
-ChurnSight is pre-configured for cloud deployment with the FastAPI backend on **Render** and the React frontend on **Vercel**.
+ChurnSight is deployed in the cloud with the FastAPI backend on **Render** and the React frontend on **Vercel**.
+
+| Service | Public URL | Description |
+|---|---|---|
+| **Frontend Dashboard** | [https://churn-sight-x5mt.vercel.app](https://churn-sight-x5mt.vercel.app/) | Interactive customer retention UI |
+| **Backend API** | [https://churnsight-3g0u.onrender.com](https://churnsight-3g0u.onrender.com) | FastAPI REST inference service |
+| **Interactive API Documentation** | [https://churnsight-3g0u.onrender.com/docs](https://churnsight-3g0u.onrender.com/docs) | Swagger UI for endpoint testing |
+| **Backend Health Check** | [https://churnsight-3g0u.onrender.com/health](https://churnsight-3g0u.onrender.com/health) | Service uptime and model readiness |
 
 ### Backend Service (Render)
-1. Create a new **Web Service** connected to the repository.
+1. Create a new **Web Service** connected to the repository (`https://github.com/Angeshkarthik/ChurnSight`).
 2. Configure the build and runtime settings:
    - **Environment:** `Python 3` (aligned with `.python-version`: `3.10.14`)
    - **Build Command:** `pip install -r requirements.txt`
    - **Start Command:** `uvicorn src.api.main:app --host 0.0.0.0 --port $PORT`
 3. Configure Environment Variables:
-   - `CORS_ORIGINS`: Must contain the exact deployed frontend origin (e.g. `https://churnsight.vercel.app`).
+   - `CORS_ORIGINS`: Set to the deployed frontend origin: `https://churn-sight-x5mt.vercel.app`.
 
 ### Frontend Dashboard (Vercel)
-1. Import the repository into Vercel.
+1. Import the repository (`https://github.com/Angeshkarthik/ChurnSight`) into Vercel.
 2. In Project Settings, configure the framework and directories:
    - **Framework Preset:** `Vite`
    - **Root Directory:** `frontend`
    - **Build Command:** `npm run build`
    - **Output Directory:** `dist`
 3. Configure Environment Variables:
-   - `VITE_API_BASE_URL`: Must be configured to the deployed backend URL without a trailing slash (e.g. `https://churnsight-api.onrender.com`).
+   - `VITE_API_BASE_URL`: Configured to the deployed backend URL without a trailing slash: `https://churnsight-3g0u.onrender.com`.
 
 ---
 
